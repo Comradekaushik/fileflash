@@ -5,12 +5,29 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
+const multer = require("multer");
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const app = express();
 const mongoose = require("mongoose");
 const User = require("./models/user");
 
 app.use(express.json());
 dotenv.config();
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+const bucketName = process.env.BUCKET_NAME;
+const region = process.env.BUCKET_REGION;
+const accessKeyId = process.env.ACCESS_KEY;
+const secretAccessKey = process.env.SECRET_ACCESS_KEY;
+const s3Client = new S3Client({
+    region,
+    credentials: {
+        accessKeyId,
+        secretAccessKey
+    }
+})
 
 const mongodbURL = process.env.mongodbURL;
 async function main() {
@@ -146,21 +163,77 @@ app.post("/login", async (req, res) => {
         } catch (err) {
             console.error("Error updating access token:", err);
             return res.status(401).json({ error: "Error encountered while signing up the user" });
-
         }
         return res.json({ message: "Login successful", token });
-
     }
     else {
         return res.status(401).json({ error: "Invalid credentials" });
     }
 })
 
-app.post("/upload/file", (req, res) => {
-
+app.post("/upload/file",upload.single('file'), async(req, res) => {
+    const generateHash = (input) => {
+        const hash = crypto.createHash('sha256');
+        hash.update(input);
+        return hash.digest('hex');
+    }
+    const generateFileName = (bytes = 32) => crypto.randomBytes(bytes).toString('hex');
+    const currentTime = new Date();
+    const timeString = currentTime.toISOString()();
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({"message" : "No file uploaded"});
+        }
+        const description = req.body.description;
+        const email = req.body.email;
+        if(!email){
+            return res.status(400).json({"message" : "No Email Provided"});
+        }
+        const fileName = `${generateHash(email)}${timeString}${generateFileName()}${Math.round(Math.random()*999)}`;
+        const fileBuffer = file.buffer;
+        const fileid = `${generateFileName(48)}${generateHash(`${email}${timeString}`)}${Math.round(Math.random()*9999)}`;
+        const uploadParams = {
+            Bucket: bucketName,
+            Body: fileBuffer,
+            Key: fileName,
+            ContentType: file.mimetype
+        };
+        await s3Client.send(new PutObjectCommand(uploadParams));
+        const fileDoc = await File.insertMany([{ 
+            email: email,
+            description: description,
+            fileid: fileid,
+            filename : fileName,
+        }]);
+        res.send(fileDoc);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Error Uploading files");
+    }
 })
 
-app.get("/download/file/:fileid", (req, res) => {
+app.get("/download/file/:fileid", async(req, res) => {
+    const id = req.params.fileid;
+    try {
+        const file = await File.findOne({ fileId: id });
+        if (!file) {
+            return res.status(404).send("File Not Found, It has either been deleted or expired");
+        }
+        const fileObj = file.toObject();
+        fileObj.imageUrl = await getSignedUrl(
+            s3Client,
+            new GetObjectCommand({
+                Bucket: bucketName,
+                Key: file.fileName
+            }),
+            { expiresIn: 900 } // 900 seconds
+        );
+        res.send(fileObj);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Error fetching post");
+    }
 
 })
 app.delete("/delete/file/:fileid", (req, res) => {
