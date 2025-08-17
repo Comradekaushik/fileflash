@@ -4,8 +4,20 @@ const {jwt} = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 
 const app = express();
+const mongoose = require("mongoose");
 
 app.use(express.json());
+const mongodbURL = "mongodb+srv://anandkaushik260:8oi5GHzDKKze7SMR@cluster-sem6-25-g4-kaus.xkcgs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster-sem6-25-g4-kaushik";
+async function main() {
+    try {
+
+        await mongoose.connect(mongodbURL, { dbName: "fileflash" });
+        console.log("***connected***");
+    } catch (err) {
+        console.log(err);
+    }
+}
+main();
 
 const transporter = nodemailer.createTransport({
     service: "gmail",
