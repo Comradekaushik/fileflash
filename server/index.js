@@ -239,6 +239,10 @@ app.get("/download/file/:fileid", async(req, res) => {
 app.delete("/delete/file/:fileid", (req, res) => {
 
 })
+app.get("/files",async(req,res)=>{
+    res.json({"message": "work undergoing"})
+})
+
 
 
 app.listen(8081, () => {
