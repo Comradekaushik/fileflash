@@ -236,12 +236,40 @@ app.get("/download/file/:fileid", async(req, res) => {
     }
 
 })
-app.delete("/delete/file/:fileid", (req, res) => {
+app.delete("/delete/files/:id", async (req, res) => {
+    try {
+        const fileId = req.params.id;
+        const token = req.body.token;
+        if (!token) {
+            return res.status(401).json({ error: "No token provided" });
+        }
+        const decoded = jwt.verify(token, jwtsecretkey);
+        const userEmail = decoded.email;
+        const user = await User.findOne({ email: userEmail });
+        if(!user){
+             return res.status(403).json({ error: "This User Does not exists" });
 
-})
+        }
+        const file = await File.findOne({ fileid: fileId });
+        const fileEmail = file.email;
+        if (userEmail === fileEmail) {
+            await File.findByIdAndDelete(fileId);
+            return res.json({ message: "✅ File deleted successfully" });
+        }
+        else {
+            return res.status(403).json({ error: "Not authorized to delete this file" });
+        }
+    } catch (err) {
+        return res.status(401).json({ error: "Some error encountered" });
+    }
+
+
+
+});
 app.get("/files",async(req,res)=>{
     res.json({"message": "work undergoing"})
 })
+
 
 
 
